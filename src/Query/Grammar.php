@@ -4,6 +4,7 @@ namespace SingleStore\Laravel\Query;
 
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\Grammars\MySqlGrammar;
+use Illuminate\Support\Facades\Log;
 
 class Grammar extends MySqlGrammar
 {
@@ -45,10 +46,10 @@ class Grammar extends MySqlGrammar
         // JSON_ARRAY_CONTAINS_[TYPE] doesn't support paths, so
         // we have to pass it through JSON_EXTRACT_JSON first.
         if ($path) {
-            $field = "JSON_EXTRACT_JSON($field$path)";
+            $field = "JSON_EXTRACT_JSON({$field}{$path})";
         }
 
-        return "JSON_ARRAY_CONTAINS_JSON($field, $value)";
+        return "JSON_ARRAY_CONTAINS_JSON({$field}, {$value})";
     }
 
     protected function compileJsonUpdateColumn($key, $value)
@@ -62,7 +63,19 @@ class Grammar extends MySqlGrammar
         // Break apart the column name from the JSON keypath.
         [$field, $path] = $this->wrapJsonFieldAndPath($key);
 
-        return "$field = JSON_SET_JSON($field$path, $value)";
+        return "{$field} = JSON_SET_JSON({$field}{$path}, {$value})";
+    }
+
+    public function compileDelete(Builder $query)
+    {
+        if (isset($query->orders)) {
+            if (env('APP_ENV') !== 'production') {
+                Log::warning('SingleStore does not support "order by" in a delete statement. The "order by" clause will be ignored.');
+            }
+            $query->orders = [];
+        }
+
+        return parent::compileDelete($query);
     }
 
     public function prepareBindingsForUpdate(array $bindings, array $values)
@@ -107,7 +120,7 @@ class Grammar extends MySqlGrammar
             return $field;
         }
 
-        return "JSON_EXTRACT_STRING($field$path)";
+        return "JSON_EXTRACT_STRING({$field}{$path})";
     }
 
     protected function wrapJsonBooleanSelector($value)
@@ -126,7 +139,7 @@ class Grammar extends MySqlGrammar
 
         // Turn all array access e.g. `data[0]` into `data->[0]`
         $column = preg_replace_callback($arrayAccessPattern, function ($matches) {
-            return "->[$matches[1]]";
+            return "->[{$matches[1]}]";
         }, $column);
 
         $parts = explode('->', $column);
@@ -141,7 +154,7 @@ class Grammar extends MySqlGrammar
             }
 
             // Named keys need to be strings.
-            return "'$part'";
+            return "'{$part}'";
         }, $parts);
 
         $path = count($parts) ? ', '.implode(', ', $parts) : '';
