@@ -66,6 +66,18 @@ class Grammar extends MySqlGrammar
         return "{$field} = JSON_SET_JSON({$field}{$path}, {$value})";
     }
 
+    public function compileUpdate(Builder $query, array $values)
+    {
+        if (isset($query->orders)) {
+            if (env('APP_ENV') !== 'production') {
+                Log::warning('SingleStore does not support "order by" in a update statement. The "order by" clause will be ignored.');
+            }
+            $query->orders = [];
+        }
+
+        return parent::compileUpdate($query, $values);
+    }
+
     public function compileDelete(Builder $query)
     {
         if (isset($query->orders)) {
